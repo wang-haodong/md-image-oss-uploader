@@ -1,0 +1,6 @@
+fastapi>=0.110
+uvicorn[standard]>=0.29
+oss2>=2.18.0
+minio>=7.1.16
+python-multipart>=0.0.9
+tqdm>=4.66.4

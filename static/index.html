@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>Markdown 图片批量上传 OSS</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 min-h-screen flex flex-col items-center py-10">
+  <div class="w-full max-w-xl bg-white rounded-2xl shadow-lg p-8">
+    <h1 class="text-2xl font-semibold text-gray-800 mb-6 flex items-center gap-2">
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-6 h-6 text-blue-600" viewBox="0 0 24 24" fill="currentColor"><path d="M12 3a9 9 0 100 18 9 9 0 000-18zM8 13h8v2H8v-2zm0-4h8v2H8V9z"/></svg>
+      Markdown 图片批量上传至 OSS
+    </h1>
+    <div class="space-y-5">
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">上传模式</label>
+        <select id="uploadMode" class="block w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="folder">文件夹上传（推荐）</option>
+          <option value="zip">压缩包上传（zip）</option>
+        </select>
+      </div>
+      <div id="folderBox">
+        <label class="block text-sm font-medium text-gray-700 mb-1">选择含 Markdown 和图片的整个文件夹</label>
+        <input id="folderInput" type="file" webkitdirectory multiple class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      <div id="zipBox" style="display:none">
+        <label class="block text-sm font-medium text-gray-700 mb-1">选择 zip 压缩包</label>
+        <input id="zipInput" type="file" accept=".zip,application/zip" class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">OSS 目录前缀（可选，默认 markdown/）</label>
+        <input id="prefix" type="text" value="markdown/" class="block w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
+      </div>
+      <button id="startBtn" class="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition">开始上传并生成新 Markdown</button>
+      <div id="progressBox" class="hidden">
+        <div class="flex justify-between text-xs text-gray-600 mb-1">
+          <span id="progressText">正在处理…</span>
+          <span id="progressValue"></span>
+        </div>
+        <div class="w-full bg-gray-200 rounded-full h-2">
+          <div id="progressBar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width:0%"></div>
+        </div>
+      </div>
+      <div id="resultContainer" class="hidden">
+        <label class="block text-sm font-medium text-gray-700 mb-1 mt-4">处理结果</label>
+        <textarea id="result" rows="10" class="w-full p-3 border border-gray-300 rounded-lg bg-gray-50 text-sm" readonly></textarea>
+        <button id="downloadBtn" class="mt-3 w-full py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition">下载新 Markdown / Zip</button>
+      </div>
+      <pre id="log" class="bg-gray-50 border border-gray-200 rounded-lg p-3 text-xs h-48 overflow-auto whitespace-pre-wrap"></pre>
+    </div>
+  </div>
+  <script>
+    const $ = id => document.getElementById(id);
+    $("uploadMode").onchange = function() {
+      if (this.value === "zip") {
+        $("zipBox").style.display = "";
+        $("folderBox").style.display = "none";
+      } else {
+        $("folderBox").style.display = "";
+        $("zipBox").style.display = "none";
+      }
+      $("resultContainer").classList.add("hidden");
+      $("progressBox").classList.add("hidden");
+      $("log").textContent = "";
+    };
+
+    function setProgress(percent, text = "") {
+      $("progressBox").classList.remove("hidden");
+      $("progressBar").style.width = percent + "%";
+      $("progressValue").textContent = percent + "%";
+      if (text) $("progressText").textContent = text;
+    }
+
+    $("startBtn").onclick = async () => {
+      const mode = $("uploadMode").value;
+      const prefixInput = $("prefix").value.trim();
+      $("log").textContent = "";
+      $("resultContainer").classList.add("hidden");
+      setProgress(2, "准备上传…");
+      let formData = new FormData();
+      if (mode === "zip") {
+        const zipFile = $("zipInput").files[0];
+        if (!zipFile) { alert("请先选择 zip 包"); return; }
+        formData.append("zipfile", zipFile);
+        formData.append("prefix", prefixInput);
+        try {
+          setProgress(5, "上传 zip 包中…");
+          const res = await fetch("/api/process_zip", { method: "POST", body: formData });
+          if (!res.ok) throw new Error(await res.text());
+          setProgress(40, "处理中…");
+          const reader = res.body.getReader();
+          let chunks = [], received = 0;
+          while (true) {
+            const {done, value} = await reader.read();
+            if (done) break;
+            chunks.push(value);
+            received += value.length;
+            setProgress(40 + Math.floor(received/100000), "生成下载包…");
+          }
+          setProgress(90, "下载准备…");
+          const blob = new Blob(chunks, {type: "application/zip"});
+          $("result").value = "批量处理完成，已打包下载 zip 文件";
+          $("resultContainer").classList.remove("hidden");
+          $("downloadBtn").onclick = () => {
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = "processed_md.zip";
+            link.click();
+          };
+          $("log").textContent = "✅ 处理完成，已自动下载！";
+          setProgress(100, "完成");
+        } catch (e) {
+          $("log").textContent = "❌ 错误: " + e.message;
+        }
+      } else {
+        const files = Array.from($("folderInput").files);
+        if (!files.length) {
+          alert("请先选择一个文件夹");
+          return;
+        }
+        // 找到md文件
+        const mdFile = files.find(f => /\.md$/i.test(f.name));
+        if (!mdFile) {
+          alert("文件夹中未检测到 Markdown 文件！");
+          return;
+        }
+        formData.append("markdown", mdFile, mdFile.name);
+        files.filter(f => f !== mdFile).forEach(f => formData.append("images", f, f.webkitRelativePath));
+        formData.append("prefix", prefixInput);
+
+        try {
+          setProgress(5, "上传文件中…");
+          const res = await fetch("/api/process", { method: "POST", body: formData });
+          if (!res.ok) throw new Error(await res.text());
+          setProgress(40, "图片上传处理中…");
+          const data = await res.json();
+          setProgress(80, "即将完成…");
+          $("result").value = data.new_markdown;
+          $("resultContainer").classList.remove("hidden");
+          $("downloadBtn").onclick = () => {
+            const blob = new Blob([data.new_markdown], { type: "text/markdown;charset=utf-8" });
+            const link = document.createElement("a");
+            link.href = URL.createObjectURL(blob);
+            link.download = mdFile.name.replace(/\\.md$/, "_oss.md");
+            link.click();
+            URL.revokeObjectURL(link.href);
+          };
+          $("log").textContent = data.log.join("\\n");
+          setProgress(100, "完成");
+        } catch (e) {
+          $("log").textContent = "❌ 错误: " + e.message;
+        }
+      }
+    };
+  </script>
+</body>
+</html>
