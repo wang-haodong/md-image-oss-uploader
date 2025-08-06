@@ -1,5 +1,7 @@
 # Markdown 图片批量上传与路径自动替换平台
 
+<img width="774" height="715" alt="image" src="https://github.com/user-attachments/assets/7fa6070d-6013-4d41-b8be-b5232ae06ae8" />
+
 本项目支持**批量上传 Markdown 文件和本地图片**，自动上传图片至云存储（支持 **阿里云 OSS** 或 **MinIO**），并将 Markdown 文件内所有本地图片路径自动替换为云端外链。
 
 > **支持两种上传方式：**  
